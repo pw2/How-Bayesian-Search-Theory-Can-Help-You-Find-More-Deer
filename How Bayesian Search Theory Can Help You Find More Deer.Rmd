@@ -1,0 +1,182 @@
+---
+title: "How Bayesian Search Theory Can Help You Find More Deer"
+author: "Patrick Ward"
+date: "10/28/2023"
+output: html_document
+---
+
+# Introduction
+
+I was talking with a friend the other day who was telling me about his brother, who leads guided deer hunts in Wyoming. Typically, clients will come out for a hunt over several days and rely on him to guide them to areas of the forest where there is a high probability of seeing deer. Of course, nothing is guaranteed! It's entirely possible to go the length of the trip and not see any deer at all. So, my friend was explaining that his brother is very good at constantly keeping an eye on the environment and his surroundings and creating a mental map in his head about the areas that will maximize his clients chances of finding deer. (There is probably an actual name for this skill, but I'm not sure what it is).
+
+This is an interesting problem and reminds me of [Bayesian Search Theory](https://en.wikipedia.org/wiki/Bayesian_search_theory), which is used to help locate objects based on prior knowledge/information and the probability of seeing the object within a specific area given it would actually be there. This approach was most recently popularized for its use in the search for the [wreckage of Malaysian Airlines Flight 370](https://www.npr.org/sections/thetwo-way/2014/03/25/294390476/can-a-250-year-old-mathematical-theorem-find-a-missing-plane).
+
+Let's walk through an example of how Bayesian Search Theory works.
+
+# Setting up the search grid
+
+## The priors
+
+Let's say our deer guide has a map that he has broken up into a 4x4 grid of squares. He places prior probabilities of seeing a deer in each region given what he knows about the terrain (e.g., areas with water and deer food will have a higher probability of deer activity).
+
+His priors grid looks like this:
+
+```{r}
+library(tidyverse)
+
+theme_set(theme_light())
+
+# priors for each square region looks like this
+matrix(data = c(0.01, 0.02, 0.01, 0.1, 0.1, 0.03, 0.03, 0.03, 
+                0.2, 0.2, 0.17, 0.1, 0.01, 0.01, 0.02, 0.01), 
+       byrow = TRUE, 
+       nrow = 4, ncol = 4) %>%
+  as.data.frame() %>%
+  setNames(c("1", "2", "3", "4")) %>%
+  pivot_longer(cols = everything(),
+               names_to = 'x_coord') %>%
+  mutate(y_coord = rep(1:4, each = 4)) %>%
+  relocate(y_coord, .before = x_coord) %>%
+  ggplot(aes(x = x_coord, y = y_coord)) +
+  geom_text(aes(label = value, color = value),
+            size = 10) +
+  scale_color_gradient(low = "red", high = "green") +
+  labs(x = "X Coorindates",
+         y = "Y Coordinates",
+         title = "Prior Probabilities of 4x4 Square Region",
+         color = "Probability") +
+  theme(axis.text = element_text(size = 11, face = "bold"))
+
+```
+
+
+We see that the y-coordinate range of 3 has a high probability of deer activity. In particular, xy = (1, 3) and xy = (2, 3) seem to maximize the chances of seeing a deer.
+
+
+# The likelihood grid
+
+The likelihood in this case describe the probability of seeing a deer in a specific square region given that a deer is actually there. p(Square Region | Deer)
+
+To determine these likelihoods, our deer guide is constantly scouting the areas and making mental notes about what he sees. He documents certain things within each square region that would indicate deer are there. For example, deer droppings, foot prints, actually seeing some deer, and previous successful hunts in a certain region. Using this information he creates a grid of the following likelihoods:
+
+```{r}
+matrix(data = c(0.88, 0.82, 0.88, 0.85, 0.77, 0.65, 0.83, 0.95, 
+                0.98, 0.97, 0.93, 0.94, 0.93, 0.79, 0.68, 0.80), 
+       byrow = TRUE, 
+       nrow = 4, ncol = 4) %>%
+  as.data.frame() %>%
+  setNames(c("1", "2", "3", "4")) %>%
+  pivot_longer(cols = everything(),
+               names_to = 'x_coord') %>%
+  mutate(y_coord = rep(1:4, each = 4)) %>%
+  relocate(y_coord, .before = x_coord) %>%
+  ggplot(aes(x = x_coord, y = y_coord)) +
+  geom_text(aes(label = value, color = value),
+            size = 10) +
+  scale_color_gradient(low = "red", high = "green") +
+  labs(x = "X Coorindates",
+         y = "Y Coordinates",
+         title = "Likelihoods for each 4x4 Square Region",
+         subtitle = "p(Region | Seeing Deer)",
+         color = "Probability") +
+  theme(axis.text = element_text(size = 11, face = "bold"))
+
+```
+
+
+
+# Combining our prior knowledge and likelihoods
+
+To make things easier, I'll put both the priors and likelihoods into a single data frame.
+
+```{r}
+dat <- data.frame(
+  coords = c("1,1", "2,1", "3,1", "4,1", "1,2", "2,2", "3,2", "4,2", "1,3", "2,3", "3,3", "4,3", "1,4", "2,4", "3,4", "4,4"),
+  priors = c(0.01, 0.02, 0.01, 0.1, 0.1, 0.03, 0.03, 0.03, 
+                0.2, 0.2, 0.17, 0.1, 0.01, 0.01, 0.02, 0.01),
+  likelihoods = c(0.88, 0.82, 0.88, 0.85, 0.77, 0.65, 0.83, 0.95, 
+                0.98, 0.97, 0.93, 0.94, 0.93, 0.79, 0.68, 0.80))
+
+dat
+```
+
+
+Now he multiplies the prior and likelihood together to summarize his belief of deer in each square region.
+
+```{r}
+dat <- dat %>%
+  mutate(posterior = round(priors * likelihoods, 2))
+
+dat %>%
+  ggplot(aes(x = coords, y = posterior)) +
+  geom_col(color = "black",
+           fill = "light grey") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(axis.text = element_text(size = 11, face = "bold"))
+```
+
+
+As expected, squares (1,3), (2,3), and (3,3) have the highest probability of observing a deer. Those would be the first areas that our deer hunt guide would want to explore when taking new clients out.
+
+# Updating Beliefs After Searching a Region
+
+Since square (1,3) has the highest probability our deer hunt guide decides to take his new clients out there to search for deer. After one day of searching they don't find any deer. To ensure success tomorrow, he needs to update his knowledge not only about square (1, 3) but about all of the other squares in his 4x4 map.
+
+To update square (1, 3) we use the following equation:
+
+$update.posterior = prior * (1 - likelihood) / (1 - prior*likelihood)$
+
+```{r}
+coord1_3 <- dat %>%
+  filter(coords == "1,3")
+
+coord1_3$priors * (1 - coord1_3$likelihoods) / (1 - coord1_3$priors * coord1_3$likelihoods)
+```
+
+Thew new probability for region (1, 3) is 0.5%. Once we update that square region we can update the other regions using the following equation:
+
+$update.prior = prior * (1 / (1 - prior * likelihood))$
+
+We can do this for the entire data set all at once:
+
+```{r}
+dat <- dat %>%
+  mutate(posterior2 = round(priors * (1 / (1 - priors*likelihoods)), 2),
+         posterior2 = ifelse(coords == "1,3", 0.005, posterior2)) %>%
+  mutate(updated_posterior = round(posterior2 * likelihoods, 3))
+
+dat %>%
+  select(coords, posterior, updated_posterior) %>%
+  pivot_longer(cols = -coords) %>%
+  ggplot(aes(x = coords, y = value, fill = name)) +
+  geom_col(position = "dodge") +
+  labs(title = "Updating probability of seeing deer after a search in square 1,3 is unsuccessful") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(axis.text = element_text(size = 11, face = "bold"))
+
+
+matrix(dat$updated_posterior, ncol = 4, nrow = 4, byrow = TRUE) %>%
+  as.data.frame() %>%
+  setNames(c("1", "2", "3", "4")) %>%
+  pivot_longer(cols = everything(),
+               names_to = 'x_coord') %>%
+  mutate(y_coord = rep(1:4, each = 4)) %>%
+  relocate(y_coord, .before = x_coord) %>%
+  ggplot(aes(x = x_coord, y = y_coord)) +
+  geom_text(aes(label = value, color = value),
+            size = 10) +
+  scale_color_gradient(low = "red", high = "green") +
+  labs(x = "X Coorindates",
+         y = "Y Coordinates",
+         title = "Updated Posterior for each 4x4 Square Region after searching (1,3) and\nnot seeing deer",
+         color = "Probability") +
+  theme(axis.text = element_text(size = 11, face = "bold"))
+
+```
+
+
+We can see that after updating the posteriors following day 1, hist best approach is to search grid (2, 3) and (3,3) tomorrow, as the updated beliefs indicate that they have a higher probability of having a deer in them.
+
+# Conclusion
+
+We can of course continue updating after searching each region until we finally find the deer but we will stop here and allow you to play with the code and continue on if you'd like. This tutorial is just to provide a brief look into how to use Bayesian Search Theory to locate objects in various spaces, so hopefully you can use this method and apply it to other aspects of your life.
